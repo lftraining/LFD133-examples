@@ -1,0 +1,88 @@
+mod utils;
+
+use wasm_bindgen::prelude::*;
+use wasm_bindgen::{Clamped, JsCast};
+use web_sys::ImageData;
+
+fn colour(iteration: u16, offset: u16, scale: u16) -> u8 {
+    let iteration = ((iteration * scale) + offset) % 1024;
+    if iteration < 256 {
+        return iteration as u8;
+    } else if iteration < 512 {
+        return 255 - (iteration - 255) as u8;
+    } else {
+        return 0;
+    }
+}
+
+fn iterateEquation(x0: f32, y0: f32, maxiterations: u16) -> u16 {
+    let mut a = 0.0;
+    let mut b = 0.0;
+    let mut rx = 0.0;
+    let mut ry = 0.0;
+    let mut iterations = 0;
+    while iterations < maxiterations && (rx * rx + ry * ry <= 4.0) {
+        rx = a * a - b * b + x0;
+        ry = 2.0 * a * b + y0;
+        a = rx;
+        b = ry;
+        iterations = iterations + 1;
+    }
+    return iterations;
+}
+
+fn scale(domainStart: f32, domainLength: f32, screenLength: f32, step: u32) -> f32 {
+    return domainStart + domainLength * ((step as f32 - screenLength) / screenLength);
+}
+
+fn mandelbrot(maxiterations: u16, cx: f32, cy: f32, diameter: f32) -> Vec<u8> {
+    let verticalDiameter = diameter * 256.0 / 256.0;
+    let mut data = Vec::new();
+    for x in 0..256 {
+        for y in 0..256 {
+            //map to mandelbrot coordinates
+            let rx = scale(cx, diameter, 256.0, x);
+            let ry = scale(cy, verticalDiameter, 256.0, y);
+            let iterations = iterateEquation(rx, ry, maxiterations);
+            let idx = (x + y * 256) * 4;
+
+            if iterations == maxiterations {
+                data.push(0);
+                data.push(0);
+                data.push(0);
+                data.push(255);
+            } else {
+                data.push(colour(iterations, 0, 4));
+                data.push(colour(iterations, 128, 4));
+                data.push(colour(iterations, 365, 4));
+                data.push(255);
+            }
+        }
+    }
+    return data;
+}
+
+#[wasm_bindgen]
+pub fn greet() -> String {
+    let document = web_sys::window().unwrap().document().unwrap();
+
+    let canvas = document.get_element_by_id("canvas").unwrap();
+    let canvas: web_sys::HtmlCanvasElement = canvas
+        .dyn_into::<web_sys::HtmlCanvasElement>()
+        .map_err(|_| ())
+        .unwrap();
+
+    let context = canvas
+        .get_context("2d")
+        .unwrap()
+        .unwrap()
+        .dyn_into::<web_sys::CanvasRenderingContext2d>()
+        .unwrap();
+
+    let mut man = mandelbrot(10000, -0.7436447860, 0.1318252536, 0.00029336);
+
+    let data = ImageData::new_with_u8_clamped_array_and_sh(Clamped(&mut man), 256, 256).unwrap();
+    context.out_image_data(&data, 0.0, 0.0).unwrap();
+
+    return String::from("hello world");
+}
